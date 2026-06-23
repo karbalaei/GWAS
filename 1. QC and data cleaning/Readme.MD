@@ -5,7 +5,7 @@ Upstream data cleaning is the most critical determinant of downstream imputation
 
 Sample-level QC identifies and removes low-quality DNA samples, contaminated specimens, chromosomal abnormalities, and population outliers.
 
-**A. Call Rate Outliers ** (--mind)
+**A. Call Rate Outliers** (--mind)
 
 Samples with low call rates indicate a failed genotyping experiment (e.g., poor DNA quality or low concentration). A strict threshold of $>95\%$ call rate is enforced.
 ```
