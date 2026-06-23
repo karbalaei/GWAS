@@ -1,3 +1,41 @@
+## 🛠️ Phase 1: Quality Control & Data Filtering
+
+Upstream data cleaning is the most critical determinant of downstream imputation accuracy. Genotyping arrays naturally introduce systematic errors, probe hybridization failures, and sample contamination that must be statistically pruned prior to reference panel matching. This pipeline utilizes **PLINK (v1.9)** and **GCTA** to execute rigorous sample- and variant-level filtering.
+### 👤 1. Sample-Level Filtering & Ancestry Uniformity
+
+Sample-level QC identifies and removes low-quality DNA samples, contaminated specimens, chromosomal abnormalities, and population outliers.
+
+**A. Call Rate Outliers ** (--mind)
+
+Samples with low call rates indicate a failed genotyping experiment (e.g., poor DNA quality or low concentration). A strict threshold of $>95\%$ call rate is enforced.
+```
+plink --bfile $FILENAME \
+      --mind 0.05 \
+      --make-bed \
+      --out ${FILENAME}_after_call_rate
+# Export list of removed individuals
+mv ${FILENAME}_after_call_rate.irem CALL_RATE_OUTLIERS.txt
+```
+
+**B. Heterozygosity Outliers** (--het)
+
+Severe deviations in mean heterozygosity indicate either sample contamination (inflated heterozygosity) or high inbreeding coefficients/poor sample preparation (deflated heterozygosity). Samples outside $\pm 0.15$ of the target inbreeding coefficient ($F$) distribution are removed.
+
+
+* **Ancestry Homogeneity Tracking:** Infers genetic ancestry by projecting sample genotypes against a reference dataset (such as HapMap3 or 1000 Genomes) using Principal Component Analysis (PCA). Samples falling beyond $\pm 6$ standard deviations from the target cluster mean are excluded to prevent false-positive signals driven by population stratification.
+* **Cryptic Relatedness Pruning:** Evaluates a Genetic Relationship Matrix (GRM) to calculate identity-by-descent (IBD) coefficients. A threshold is set at a genomic relationship cutoff of $0.125$ to systematically eliminate first- and second-degree cousins, ensuring sample independence for standard linear regression modeling. Alternatively, the cutoff can be adjusted upwards (e.g., $0.80$) solely to catch duplicate samples or monozygotic twins, enabling the downstream use of a Linear Mixed Model (LMM) that accounts for family structures.
+
+### 🧬 Variant-Level Quality Control Parameters
+* **Variant Call Rate (Missingness):** Filters out specific Single Nucleotide Polymorphisms (SNPs) exhibiting high missingness coefficients. High variant missingness indicates poor probe hybridization chemistry or low-quality genomic regions, introducing experimental noise.
+* **Differential Missingness by Phenotype Status:** Compares variant call rates between case and control cohorts using a specialized test. Any systematic deviation in missingness indicates technical batch effects or technical artifacts during sample plate processing rather than true biological variance.
+* **Haplotype-Specific Missingness:** Tests whether the missingness of a specific variant is dependent on its surrounding flanking haplotype. This catches localized sequencing drops or directional alignment biases.
+* **Hardy-Weinberg Equilibrium (HWE) Deviations:** Assesses deviations from HWE within the control cohort exclusively. Severe deviations from historical HWE baseline assumptions signal systematic genotyping errors, copying duplication artifacts, or severe probe misalignments rather than selective evolutionary pressures.
+* **Minor Allele Frequency (MAF) Thresholds:** Imposes a strict lower limit on allele frequencies to eliminate ultra-rare variants that lack the statistical power to resolve true linear associations. This filter is applied conditionally based on whether the downstream array design is explicitly optimized for rare-variant discovery.
+
+### 📋 Post-QC Imputation Preparation
+Following variant filtration, the cleaned dataset undergoes strand alignment synchronization. Using specialized strand-checking utilities, variant alleles, genomic coordinates, and reference frequencies are matched against the reference assembly to ensure consistency before submission to remote imputation servers.
+
+
 # 1. QC and data cleaning
 The QC and data cleaning is very important prior imputation since the cleaner data you put in there the better and more accurate data you will get out. PLINK and GCTA are very easy program for doing this.
 
