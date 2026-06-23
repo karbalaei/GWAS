@@ -1,7 +1,7 @@
 # Genome-Wide Association Studies (GWAS) Analytical Pipeline
 
 ## 📌 Protocol Overview and Core Rationale
-This pipeline provides a rigorous, high-throughput computational framework designed to guide researchers through the execution of Genome-Wide Association Studies (GWAS)[cite: 37]. The underlying architecture is structured to optimize statistical power, control for population stratification, eliminate technical artifacts, and produce reproducible, publication-ready genetic association profiles[cite: 37]. 
+This pipeline provides a rigorous, high-throughput computational framework designed to guide researchers through the execution of Genome-Wide Association Studies (GWAS). The underlying architecture is structured to optimize statistical power, control for population stratification, eliminate technical artifacts, and produce reproducible, publication-ready genetic association profiles. 
 
 The pipeline is divided into five sequential phases:
 1. **Quality Control (QC) and Data Filtering**
