@@ -1,6 +1,8 @@
+# **This part did not used for my project and prepared in case that I need to use it**
+
+
 # Phase 4: Meta-Analytic Integration Protocol
 
-** This part did not used for my project and prepared in case that I need to use it **
 
 Meta-analysis provides a mathematically rigorous framework to combine independent summary statistics across multiple discovery cohorts, biobanks, or global consortia. This massively expands the effective sample size ($N$), improving statistical power to discover subtle polygenic signals while controlling for individual study variances.
 
