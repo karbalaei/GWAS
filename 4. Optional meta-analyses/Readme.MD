@@ -1,119 +1,99 @@
-# 4. Optional meta-analyses
-Meta-analyses are used when you have multiple datasets.
+# Phase 4: Meta-Analytic Integration Protocol
 
-## Prep of your GWAS results (based on RVTEST file)
+** This part did not used for my project and prepared in case that I need to use it **
 
-merge all GWAS files per chromosome and merge all .info files
-```
-cat *.SingleWald.assoc | grep -v 'N_INFORMATIVE' > allChrs_FILE.assoc 
-cat maf001rsq03minimums_chr*.info | grep -v 'Rsq' > allChrs_FILE.Info
-```
-Then in reformat in R
-```
-R
-# note1 you can speed this up with the data.table package and changing read.table and write.table to fread and fwrite
-# note2 we set here beta filtering at <5 and >-5 since typically these are unrealistic beta's coming from GWAS
-infos <- read.table(paste("allChrs_FILE.Info"))
-colnames(infos) <- c("SNP","ALT_Frq","Rsq")
-assoc <- read.table(paste("allChrs_FILE.assoc"))
-colnames(assoc) <- c("CHROM","POS","REF","ALT","N_INFORMATIVE","Test","Beta","SE","Pvalue")
-data <- merge(infos, assoc, by.x = "SNP", by.y = "Test", all.y = T)
-dat <- subset(data, Beta < 5 & Beta > -5 & !is.na(data$Pvalue))
-dat$chr <- paste("chr",dat$CHROM, sep = "")
-dat$markerID <- paste(dat$chr,dat$POS, sep = ":")
-dat$minorAllele <- ifelse(dat$ALT_Frq <= 0.5, as.character(dat$ALT), as.character(dat$REF))
-dat$majorAllele <- ifelse(dat$ALT_Frq <= 0.5, as.character(dat$REF), as.character(dat$ALT))
-dat$beta <- ifelse(dat$ALT_Frq <= 0.5, dat$Beta, dat$Beta*-1)
-dat$se <- dat$SE
-dat$maf <- ifelse(dat$ALT_Frq <= 0.5, dat$ALT_Frq, 1 - dat$ALT_Frq)
-dat$P <- dat$Pvalue
-dat0 <- dat[,c("markerID","minorAllele","majorAllele","beta","se","maf","P")]
-write.table(dat0, file=paste("toMeta.FILE.tab"), quote = F, sep = "\t", row.names = F)
-```
+Meta-analysis provides a mathematically rigorous framework to combine independent summary statistics across multiple discovery cohorts, biobanks, or global consortia. This massively expands the effective sample size ($N$), improving statistical power to discover subtle polygenic signals while controlling for individual study variances.
 
-## Create a metal file 
-Create a metal file that looks like below and save it as my_metal_analysis.txt
+For a three-group multi-diagnostic study architecture (**Controls, MDD patients, and BP patients**), meta-analyses are executed **independently per pairwise contrast model** (e.g., meta-analyzing the MDD vs. Controls summary statistics across independent discovery sites) to preserve strict diagnostic boundaries.
+
+---
+
+## 🛠️ 1. Pipeline Execution Flow
+
+### Step A: Summary Statistic Consolidation & Harmonization
+
+Raw association files generated per chromosome by the Phase 3 association engine (`RVTESTS`) are concatenated into genome-wide archives. Unrealistic effect sizes ($\beta \ge 5$ or $\beta \le -5$) or missing values ($P = \text{NA}$) caused by low-coverage regional models are systematically filtered out. Alleles are explicitly oriented to the true minor allele to prevent downstream strand-swapping or phase inversion issues.
+
+### Step B: Fixed-Effects Meta-Analysis via METAL
+
+Using the inverse-variance weighting scheme (`SCHEME STDERR`), summary metrics are combined across cohorts. Cochran’s $Q$-test and the $I^2$ index are automatically computed to evaluate cross-study heterogeneity.
+
+---
+
+## 📄 2. METAL Configuration Architecture
+
+Create a configuration text file named `meta_analysis_scheme.txt` using the structure below. This structure uses standard error weighting and monitors background heterogeneity:
 
 ```
-#../generic-metal/metal metalAll.txt
-#THIS SCRIPT EXECUTES AN ANALYSIS OF EIGHT STUDIES
-#THE RESULTS FOR EACH STUDY ARE STORED IN FILES Inputfile1.txt THROUGH Inputfile8.txt
-SCHEME  STDERR
+# === GLOBAL CONFIGURATION ===
+SCHEME      STDERR
 AVERAGEFREQ ON
-MINMAXFREQ ON
-LABEL TotalSampleSize as N # If input files have a column for the sample size labeled as 'N'
-# LOAD THE FIRST SEVEN INPUT FILES
+MINMAXFREQ  ON
+LABEL       TotalSampleSize as N
 
-# UNCOMMENT THE NEXT LINE TO ENABLE GenomicControl CORRECTION
+# UNCOMMENT THE NEXT LINE TO ENABLE GENOMIC CONTROL CORRECTION IF INFLATION IS PRESENT
 # GENOMICCONTROL ON
 
-# === DESCRIBE AND PROCESS THE FIRST INPUT FILE ===
-MARKER markerID
-ALLELE minorAllele majorAllele
-FREQ   maf
-EFFECT beta
-STDERR se
-PVALUE P
-WEIGHT N 
-PROCESS toMeta.GWAS1.tab
+# === COHORT 1 SUMMARY STATISTICS ===
+MARKER      markerID
+ALLELE      minorAllele majorAllele
+FREQ        maf
+EFFECT      beta
+STDERR      se
+PVALUE      P
+WEIGHT      N 
+PROCESS     cohort1_contrast_harmonized.tab
 
-# === DESCRIBE AND PROCESS THE SECOND INPUT FILE ===
-MARKER markerID
-ALLELE minorAllele majorAllele
-FREQ   maf
-EFFECT beta
-STDERR se
-PVALUE P
-WEIGHT N
-PROCESS toMeta.GWAS2.tab
+# === COHORT 2 SUMMARY STATISTICS ===
+MARKER      markerID
+ALLELE      minorAllele majorAllele
+FREQ        maf
+EFFECT      beta
+STDERR      se
+PVALUE      P
+WEIGHT      N
+PROCESS     cohort2_contrast_harmonized.tab
 
+# === COHORT 3 SUMMARY STATISTICS ===
+MARKER      markerID
+ALLELE      minorAllele majorAllele
+FREQ        maf
+EFFECT      beta
+STDERR      se
+PVALUE      P
+WEIGHT      N
+PROCESS     cohort3_contrast_harmonized.tab
 
-# === DESCRIBE AND PROCESS THE SIXTH INPUT FILE ===
-MARKER markerID
-ALLELE minorAllele majorAllele
-FREQ   maf
-EFFECT beta
-STDERR se
-PVALUE P
-WEIGHT N
-PROCESS toMeta.GWAS3.tab
-
-
-OUTFILE MY_THREE_GWAS_FILES_META .tbl
-ANALYZE HETEROGENEITY
+# === OUTPUT CONTROL ===
+OUTFILE     gwas_pairwise_contrast_meta_results .tbl
+ANALYZE     HETEROGENEITY
 
 QUIT
-``` 
-
-## Run metal
-
-Then run metal like this:
 
 ```
-metal metal.txt
-```
 
-## Output will look something like this:
-These are a couple of lines from one a recent GWAS, including 17 datasets. 
+---
 
-```
-MarkerName      Allele1 Allele2 Freq1   FreqSE  MinFreq MaxFreq Effect  StdErr  P-value Direction       HetISq  HetChiSq        HetDf   HetPVal TotalSampleSize
-chr4:90666041   t       c       0.6036  0.0229  0.5505  0.6295  0.6980  0.1169  2.348e-09       +-++++++-++++++++       40.4    26.827  16      0.04344 138030
-chr3:8379719	a	g	0.2688	0.0101	0.2534	0.2884	0.0006	0.1582	0.997	-+-?+?-+??--++--+	0.0	8.536	12	0.742 140900
+## 📊 3. Interpretation & Downstream Quality Control
 
-```
-A couple of notes:
+The output file generated by METAL includes critical columns for post-meta quality evaluation:
 
-For the Direction column three options are possible +,- and ?. ? means the variant was not present in that dataset, + means positive beta and - means negative beta value.
-The HetDf value is the number of included datasets for the variant -1 
-Note the it is also recommend to filter for HetISq, anything higher than 80 is not reliable.
+* **`Direction`**: Displays the consistency of the direction of effect across the input datasets using symbols (`+`, `-`, or `?`). A `?` indicates that the variant was missing or filtered out from that specific cohort database.
+* **`HetDf`**: The degrees of freedom, equivalent to the number of contributing cohorts minus one ($N - 1$).
+* **`HetISq` ($I^2$ Heterogeneity Metric)**: Quantifies the proportion of total variation across studies due to true heterogeneity rather than pure sampling chance.
+* ⚠️ **QC Threshold Warning:** Variants displaying a **`HetISq > 80%`** must be flagged or filtered out downstream. High $I^2$ metrics indicate unstable signals driven by inconsistent diagnostic criteria, severe technical batch effects, or population stratification discrepancies across study populations.
 
-Also optional sorting and filtering:
-```
-# column 10 is the p-value column
-sort -gk 10 META_ALL_DATA1.tbl > SORTED_META_ALL_DATA1.tbl
-```
 
-### References:
 
-METAL: https://www.ncbi.nlm.nih.gov/pubmed/20616382
+---
+
+## 💻 4. SLURM Automation Pipeline Script
+
+This comprehensive SLURM batch script automates data concatenation, runs the specialized R harmonization routine with high-speed `data.table` backends, and executes the `METAL` engine inside a reproducible workflow.
+
+---
+
+## 📚 References
+
+* **METAL Framework:** Willer, C. J. et al. (2010) 'METAL: fast and efficient meta-analysis of genomewide association scans', *Bioinformatics*, 26(17), pp. 2190–2191. doi:10.1093/bioinformatics/btq340.
+* **Data Table Backend:** Dowle, M. et al. (2019) 'data.table: Extension of `data.frame`', *R Package Reference*. Available at: [https://CRAN.R-project.org/package=data.table](https://CRAN.R-project.org/package=data.table).
