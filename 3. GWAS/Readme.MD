@@ -1,78 +1,99 @@
-# Phase 3: Association Testing & Covariate Regression
+# Phase 4: Meta-Analytic Integration Protocol
 
-Following genotype imputation, association testing evaluates whether an allele's dosage covaries significantly with the target phenotype across parallel genomic models.  This page outlines the procedures for generating population structure covariates via `FlashPCA` and running the association engine via `RVTESTS`.  
+** This part did not used for my project and prepared in case that I need to use it **
 
-## 👥 1. Latent Covariate Generation
+Meta-analysis provides a mathematically rigorous framework to combine independent summary statistics across multiple discovery cohorts, biobanks, or global consortia. This massively expands the effective sample size ($N$), improving statistical power to discover subtle polygenic signals while controlling for individual study variances.
 
-To prevent false-positive signals driven by population stratification, genome-wide association models must systematically control for ancestry using Principal Components (PCs), typically alongside biological covariates like `AGE` and `SEX`.
-
-
-### A. Long-Range LD Region Inversion Exclusions
-
-Prior to computing PCs, highly polymorphic regions prone to long-range linkage disequilibrium (LD)—such as the Major Histocompatibility Complex (MHC) on chromosome 6 or inversion loops on chromosomes 5 and 8—must be strictly excluded. This ensures the calculated PCs capture true macro-level macro-geographic stratification rather than localized, long-range LD blocks driven by independent selective sweeps. 
-
-- **Recommended hg38 Exclusions**:  
-
-```
-Chr1     47534328    51534328    r1
-Chr2    133742429   137242430    r2
-Chr2    182135273   189135274    r3
-Chr3     47458510    49962567    r4
-Chr3     83450849    86950850    r5
-Chr5     98664296   101164296    r6
-Chr5    129664307   132664308    r7
-Chr5    136164311   139164311    r8
-Chr6     24999772    35032223    r9
-Chr6    139678863   142178863    r10
-Chr8      7142478    13142491    r11
-Chr8    110987771   113987771    r12
-Chr11   87789108    90766832    r13
-Chr12   109062195   111562196    r14
-Chr20   33412194    35912078    r15
-
-```
-
-### B. LD Pruning and PC Calculation
-Using the raw dataset, variants are strictly filtered, pruned for pairwise linkage disequilibrium, and processed with `FlashPCA` to extract the top 5–10 eigenvectors.
+For a three-group multi-diagnostic study architecture (**Controls, MDD patients, and BP patients**), meta-analyses are executed **independently per pairwise contrast model** (e.g., meta-analyzing the MDD vs. Controls summary statistics across independent discovery sites) to preserve strict diagnostic boundaries.
 
 ---
 
-## 🛠️ 2. Phenotype Design for Three-Group Cohorts
+## 🛠️ 1. Pipeline Execution Flow
 
-Because we are modeling a three-group study design (**Healthy Controls, MDD Patients, and BP Patients**), standard binary case-control regressions are insufficient to capture the full spectrum of risk. To ensure appropriate statistical modeling, we must approach this using one of two strategies:
+### Step A: Summary Statistic Consolidation & Harmonization
 
-### Strategy A: Pairwise Direct Group Contrasts (Recommended)
+Raw association files generated per chromosome by the Phase 3 association engine (`RVTESTS`) are concatenated into genome-wide archives. Unrealistic effect sizes ($\beta \ge 5$ or $\beta \le -5$) or missing values ($P = \text{NA}$) caused by low-coverage regional models are systematically filtered out. Alleles are explicitly oriented to the true minor allele to prevent downstream strand-swapping or phase inversion issues.
 
-Split the association phase into independent downstream models using the `--peopleIncludeFile` flag to subset our cohorts. This evaluates clear biological boundaries without violating regression assumptions:
+### Step B: Fixed-Effects Meta-Analysis via METAL
 
-1. **Model 1 (MDD vs. Controls):** Isolates unipolar depression mechanisms.
-2. **Model 2 (BP vs. Controls):** Isolates bipolar disorder mechanisms.
-3. **Model 3 (BP vs. MDD):** Directly maps the genomic differences differentiating the two distinct psychiatric conditions.
+Using the inverse-variance weighting scheme (`SCHEME STDERR`), summary metrics are combined across cohorts. Cochran’s $Q$-test and the $I^2$ index are automatically computed to evaluate cross-study heterogeneity.
 
-### Strategy B: Multi-Categorical or Polytomous Regression
+---
 
-If modeling all three groups within a single continuous framework, we must convert the phenotype column into dummy-coded categorical indicators or leverage an LMM architecture capable of processing multi-allelic multinomial outcomes.
+## 📄 2. METAL Configuration Architecture
 
-## 💻 Script Description & SLURM Automation
+Create a configuration text file named `meta_analysis_scheme.txt` using the structure below. This structure uses standard error weighting and monitors background heterogeneity:
 
-The automation architecture for this step is divided into two separate pipeline scripts:
+```
+# === GLOBAL CONFIGURATION ===
+SCHEME      STDERR
+AVERAGEFREQ ON
+MINMAXFREQ  ON
+LABEL       TotalSampleSize as N
 
-- `gwas_step3_pca.sh` : (**Ancestry PC Computation**) ; The automated high-performance computing batch scripts to compute covariates and run the association models.
+# UNCOMMENT THE NEXT LINE TO ENABLE GENOMIC CONTROL CORRECTION IF INFLATION IS PRESENT
+# GENOMICCONTROL ON
 
-- `gwas_step3_rvtests.sh` : (**Parallelized Association Testing**) ; This script uses a SLURM job array to run association testing across chromosomes 1–22 concurrently, pulling the raw dosage data and testing it using a Wald single-variant model.
+# === COHORT 1 SUMMARY STATISTICS ===
+MARKER      markerID
+ALLELE      minorAllele majorAllele
+FREQ        maf
+EFFECT      beta
+STDERR      se
+PVALUE      P
+WEIGHT      N 
+PROCESS     cohort1_contrast_harmonized.tab
 
-### 📊 Parameters Guide
+# === COHORT 2 SUMMARY STATISTICS ===
+MARKER      markerID
+ALLELE      minorAllele majorAllele
+FREQ        maf
+EFFECT      beta
+STDERR      se
+PVALUE      P
+WEIGHT      N
+PROCESS     cohort2_contrast_harmonized.tab
 
-- `--dosage DS`: Standardizes inputs to extract continuous probability dosage data directly from the input VCF arrays rather than hard-called genotypes.
+# === COHORT 3 SUMMARY STATISTICS ===
+MARKER      markerID
+ALLELE      minorAllele majorAllele
+FREQ        maf
+EFFECT      beta
+STDERR      se
+PVALUE      P
+WEIGHT      N
+PROCESS     cohort3_contrast_harmonized.tab
 
-- `--rangeFile`: References a regional positional matrix filter (compiled in Phase 1) to bypass low-frequency or poorly imputed variant coordinates, speeding up processing.
+# === OUTPUT CONTROL ===
+OUTFILE     gwas_pairwise_contrast_meta_results .tbl
+ANALYZE     HETEROGENEITY
 
-- `--single wald`: Evaluates fixed-effects coefficients and significance levels using standard single-variant Wald testing.
+QUIT
+
+```
+
+---
+
+## 📊 3. Interpretation & Downstream Quality Control
+
+The output file generated by METAL includes critical columns for post-meta quality evaluation:
+
+* **`Direction`**: Displays the consistency of the direction of effect across the input datasets using symbols (`+`, `-`, or `?`). A `?` indicates that the variant was missing or filtered out from that specific cohort database.
+* **`HetDf`**: The degrees of freedom, equivalent to the number of contributing cohorts minus one ($N - 1$).
+* **`HetISq` ($I^2$ Heterogeneity Metric)**: Quantifies the proportion of total variation across studies due to true heterogeneity rather than pure sampling chance.
+* ⚠️ **QC Threshold Warning:** Variants displaying a **`HetISq > 80%`** must be flagged or filtered out downstream. High $I^2$ metrics indicate unstable signals driven by inconsistent diagnostic criteria, severe technical batch effects, or population stratification discrepancies across study populations.
+
+
+
+---
+
+## 💻 4. SLURM Automation Pipeline Script
+
+This comprehensive SLURM batch script automates data concatenation, runs the specialized R harmonization routine with high-speed `data.table` backends, and executes the `METAL` engine inside a reproducible workflow.
+
+---
 
 ## 📚 References
 
-- **FlashPCA Matrix**: Purcell, S. et al. (2007) 'PLINK: a tool set for whole-genome association and population-based linkage analyses', The American Journal of Human Genetics, 81(3), pp. 559–575. doi:10.1086/519795.
-
-- **RVTESTS Engine**: Zhan, X. et al. (2016) 'RVtests: an efficient and comprehensive tool for rare variant association analysis using sequence data', Bioinformatics, 32(9), pp. 1423–1426. doi:10.1093/bioinformatics/btw079.
-
-
+* **METAL Framework:** Willer, C. J. et al. (2010) 'METAL: fast and efficient meta-analysis of genomewide association scans', *Bioinformatics*, 26(17), pp. 2190–2191. doi:10.1093/bioinformatics/btq340.
+* **Data Table Backend:** Dowle, M. et al. (2019) 'data.table: Extension of `data.frame`', *R Package Reference*. Available at: [https://CRAN.R-project.org/package=data.table](https://CRAN.R-project.org/package=data.table).
